@@ -38,7 +38,6 @@ GLFWwindow* window;
 
 void PrintDeviceProperties(VkPhysicalDevice& device)
 {
-
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(device, &properties);
     std::cout << "Name: " << properties.deviceName << std::endl;
@@ -108,7 +107,21 @@ void PrintDeviceProperties(VkPhysicalDevice& device)
     std::cout << "Current Transform: " << surfaceCaps.currentTransform << std::endl;
     std::cout << "Supported Composite Alpha: " << surfaceCaps.supportedCompositeAlpha << std::endl;
     std::cout << "Supported Usage Flags: " << surfaceCaps.supportedUsageFlags << std::endl;
-    std::cout << ---------------------------------------------------" << std::endl;
+    std::cout << "---------------------------------------------------" << std::endl;
+
+    uint32_t numFormats = 0;
+    VK_CALL(vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &numFormats, nullptr));
+    std::vector<VkSurfaceFormatKHR> surfaceFormats;
+    surfaceFormats.resize(numFormats);
+    VK_CALL(vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &numFormats, surfaceFormats.data()));
+    std::cout << "---------------------------------------------------" << std::endl;
+    std::cout << "Number of Formats: " << numFormats << std::endl;
+    for (int i = 0; i < numFormats; i++)
+    {
+        std::cout << "Format #" << i << ": " << surfaceFormats[i].format << std::endl;
+        std::cout << "Color Space #" << i << ": " << surfaceFormats[i].colorSpace << std::endl;
+    }
+    std::cout << "---------------------------------------------------" << std::endl;
 }
 
 void InitGlfw()
@@ -117,7 +130,7 @@ void InitGlfw()
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-    window = glfwCreateWindow(400, 300, "Vulkan Test", nullptr, nullptr);
+    window = glfwCreateWindow(1280, 720, "Vulkan Test", nullptr, nullptr);
 }
 
 void InitVulkan()
@@ -139,7 +152,8 @@ void InitVulkan()
     vkEnumerateInstanceLayerProperties(&numLayers, layers.data());
 
     std::cout << "Number of Instance Layers: " << numLayers << std::endl;
-    for (int i = 0; i < numLayers; i++) {
+    for (int i = 0; i < numLayers; i++)
+    {
         std::cout << "---------------------------------------------------" << std::endl;
         std::cout << "Layer #" << i << std::endl;
         std::cout << "Layer Name: " << layers[i].layerName << std::endl;
@@ -154,7 +168,8 @@ void InitVulkan()
     std::vector<VkExtensionProperties> extensions;
     extensions.resize(numExt);
     vkEnumerateInstanceExtensionProperties(nullptr, &numExt, extensions.data());
-    for (int i = 0; i < numExt; i++) {
+    for (int i = 0; i < numExt; i++)
+    {
         std::cout << "---------------------------------------------------" << std::endl;
         std::cout << "Extension #" << i << std::endl;
         std::cout << "Extension Name: " << extensions[i].extensionName << std::endl;
@@ -168,7 +183,7 @@ void InitVulkan()
 
     uint32_t numberOfGlfwExt = 0;
     const char** glfwExt = glfwGetRequiredInstanceExtensions(&numberOfGlfwExt);
-     
+
     VkInstanceCreateInfo instanceInfo;
     instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instanceInfo.pNext = nullptr;
@@ -189,7 +204,8 @@ void InitVulkan()
     physicalDevices.resize(physDeviceCount);
     VK_CALL(vkEnumeratePhysicalDevices(instance, &physDeviceCount, physicalDevices.data()));
 
-    for (size_t i = 0; i < physDeviceCount; i++) {
+    for (size_t i = 0; i < physDeviceCount; i++)
+    {
         PrintDeviceProperties(physicalDevices[i]);
     }
 
@@ -222,11 +238,11 @@ void InitVulkan()
     deviceCreateInfo.ppEnabledExtensionNames = nullptr;
     deviceCreateInfo.pEnabledFeatures = &usedFeatures;
 
-    VK_CALL(vkCreateDevice(physicalDevices[0], &deviceCreateInfo, nullptr, &device)); // TODO : pick the best device instead of the first device
+    VK_CALL(vkCreateDevice(physicalDevices[0], &deviceCreateInfo, nullptr, &device));
+    // TODO : pick the best device instead of the first device
 
     VkQueue queue;
     vkGetDeviceQueue(device, 0, 0, &queue);
-
 }
 
 void GameLoop()
@@ -239,13 +255,11 @@ void GameLoop()
 
 void ShutdownVulkan()
 {
-
     VK_CALL(vkDeviceWaitIdle(device));
 
     vkDestroyDevice(device, nullptr);
     vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr); // der physikalische device gehoert der Instance
-
 }
 
 void ShutdownGlfw()
