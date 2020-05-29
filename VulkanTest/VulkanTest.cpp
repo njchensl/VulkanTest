@@ -1,3 +1,5 @@
+#pragma managed
+
 #include <iostream>
 #include <vector>
 //#define VK_USE_PLATFORM_WIN32_KHR
@@ -18,6 +20,7 @@
 #define ASSERT_VULKAN(val) \
     if (val != VK_SUCCESS) \
     { \
+        std::cerr << "Assertion failed in " << __FILE__ << " at line " << __LINE__ << std::endl; \
         __debugbreak(); \
     }
 
@@ -31,10 +34,22 @@
 
 #endif
 
+#if defined(VK_NULL_HANDLE) && VK_NULL_HANDLE == 0
+#undef VK_NULL_HANDLE
+#define VK_NULL_HANDLE nullptr
+#else
+#error Incorrect null handle definition
+#endif
+
 VkInstance instance;
 VkSurfaceKHR surface;
 VkDevice device;
+VkSwapchainKHR swapchain;
+std::vector<VkImageView> imgViews;
 GLFWwindow* window;
+
+constexpr uint32_t WIDTH = 1280;
+constexpr uint32_t HEIGHT = 720;
 
 void PrintDeviceProperties(VkPhysicalDevice& device)
 {
@@ -130,7 +145,7 @@ void InitGlfw()
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-    window = glfwCreateWindow(1280, 720, "Vulkan Test", nullptr, nullptr);
+    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Test", nullptr, nullptr);
 }
 
 void InitVulkan()
@@ -226,6 +241,10 @@ void InitVulkan()
 
     VkPhysicalDeviceFeatures usedFeatures = {};
 
+    const std::vector<const char*> deviceExt = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    };
+
     VkDeviceCreateInfo deviceCreateInfo;
     deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     deviceCreateInfo.pNext = nullptr;
@@ -234,8 +253,8 @@ void InitVulkan()
     deviceCreateInfo.pQueueCreateInfos = &deviceQueueCreateInfo;
     deviceCreateInfo.enabledLayerCount = validationLayers.size();
     deviceCreateInfo.ppEnabledLayerNames = validationLayers.data();
-    deviceCreateInfo.enabledExtensionCount = 0;
-    deviceCreateInfo.ppEnabledExtensionNames = nullptr;
+    deviceCreateInfo.enabledExtensionCount = deviceExt.size();
+    deviceCreateInfo.ppEnabledExtensionNames = deviceExt.data();
     deviceCreateInfo.pEnabledFeatures = &usedFeatures;
 
     VK_CALL(vkCreateDevice(physicalDevices[0], &deviceCreateInfo, nullptr, &device));
@@ -243,6 +262,64 @@ void InitVulkan()
 
     VkQueue queue;
     vkGetDeviceQueue(device, 0, 0, &queue);
+
+    VkBool32 surfaceSupport = VK_FALSE;
+    VK_CALL(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevices[0], 0, surface, &surfaceSupport));
+
+    //ASSERT_VULKAN(surfaceSupport);
+
+    VkSwapchainCreateInfoKHR scCreateInfo;
+    scCreateInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    scCreateInfo.pNext = nullptr;
+    scCreateInfo.flags = 0;
+    scCreateInfo.surface = surface;
+    scCreateInfo.minImageCount = 3; // TODO : check if valid
+    scCreateInfo.imageFormat = VK_FORMAT_B8G8R8A8_UNORM; // TODO civ
+    scCreateInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR; // TODO civ
+    scCreateInfo.imageExtent = {WIDTH, HEIGHT};
+    scCreateInfo.imageArrayLayers = {1};
+    scCreateInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    scCreateInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; // TODO civ
+    scCreateInfo.queueFamilyIndexCount = 0;
+    scCreateInfo.pQueueFamilyIndices = nullptr;
+    scCreateInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    scCreateInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    scCreateInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR; // TODO civ
+    scCreateInfo.clipped = VK_TRUE; // set to false if we need to access those pixels in the shaders
+    scCreateInfo.oldSwapchain = VK_NULL_HANDLE;
+
+    VK_CALL(vkCreateSwapchainKHR(device, &scCreateInfo, nullptr, &swapchain));
+
+    uint32_t numImgs = 0;
+    VK_CALL(vkGetSwapchainImagesKHR(device, swapchain, &numImgs, nullptr));
+    std::vector<VkImage> swapchainImgs;
+    swapchainImgs.resize(numImgs);
+    VK_CALL(vkGetSwapchainImagesKHR(device, swapchain, &numImgs, swapchainImgs.data()));
+
+    imgViews.resize(numImgs);
+    for (int i = 0; i < numImgs; i++)
+    {
+        VkImageViewCreateInfo imgViewCreateInfo;
+        imgViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        imgViewCreateInfo.pNext = nullptr;
+        imgViewCreateInfo.flags = 0;
+        imgViewCreateInfo.image = swapchainImgs[i];
+        imgViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        imgViewCreateInfo.format = VK_FORMAT_B8G8R8A8_UNORM; // TODO civ
+        imgViewCreateInfo.components = {
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY,
+            VK_COMPONENT_SWIZZLE_IDENTITY
+        };
+        imgViewCreateInfo.subresourceRange = {
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            0, 1, 0, 1
+        };
+
+        VK_CALL(vkCreateImageView(device, &imgViewCreateInfo, nullptr, &imgViews[i]));
+    }
+
 }
 
 void GameLoop()
@@ -257,6 +334,11 @@ void ShutdownVulkan()
 {
     VK_CALL(vkDeviceWaitIdle(device));
 
+    for (VkImageView& view : imgViews)
+    {
+        vkDestroyImageView(device, view, nullptr);
+    }
+    vkDestroySwapchainKHR(device, swapchain, nullptr);
     vkDestroyDevice(device, nullptr);
     vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr); // der physikalische device gehoert der Instance
