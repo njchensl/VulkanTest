@@ -168,7 +168,8 @@
     <ClCompile Include="VulkanTest.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="VertexShader.glsl" />
+    <None Include="FragmentShader.frag.glsl" />
+    <None Include="VertexShader.vert.glsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

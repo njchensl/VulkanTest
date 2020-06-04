@@ -1,5 +1,6 @@
 #pragma managed
 
+#include <fstream>
 #include <iostream>
 #include <vector>
 //#define VK_USE_PLATFORM_WIN32_KHR
@@ -17,7 +18,14 @@
 
 #ifdef _DEBUG
 
-#define ASSERT_VULKAN(val) \
+#define VK_ASSERT(val) \
+    if (val != VK_SUCCESS) \
+    { \
+        std::cerr << "Vulkan assertion failed in " << __FILE__ << " at line " << __LINE__ << std::endl; \
+        __debugbreak(); \
+    }
+
+#define ASSERT(val) \
     if (val != VK_SUCCESS) \
     { \
         std::cerr << "Assertion failed in " << __FILE__ << " at line " << __LINE__ << std::endl; \
@@ -25,7 +33,7 @@
     }
 
 #define VK_CALL(function) \
-    ASSERT_VULKAN(function)
+    VK_ASSERT(function)
 
 #else
 
@@ -41,12 +49,24 @@
 #error Incorrect null handle definition
 #endif
 
+#ifdef interface
+#undef interface
+#endif
+
+typedef uint8_t byte;
+typedef char sbyte;
+typedef uint32_t uint;
+
+
 VkInstance instance;
 VkSurfaceKHR surface;
 VkDevice device;
 VkSwapchainKHR swapchain;
 std::vector<VkImageView> imgViews;
 GLFWwindow* window;
+
+VkShaderModule vsModule;
+VkShaderModule fsModule;
 
 constexpr uint32_t WIDTH = 1280;
 constexpr uint32_t HEIGHT = 720;
@@ -139,6 +159,20 @@ void PrintDeviceProperties(VkPhysicalDevice& device)
     std::cout << "---------------------------------------------------" << std::endl;
 }
 
+std::vector<byte> ReadFileBin(const std::string& filepath)
+{
+    std::ifstream fs(filepath, std::ios::binary | std::ios::ate);
+    if (fs)
+    {
+        size_t fileSize = fs.tellg();
+        std::vector<byte> fileBuffer(fileSize);
+        fs.seekg(0);
+        fs.read((sbyte*)fileBuffer.data(), fileSize);
+        return fileBuffer;
+    }
+    throw std::runtime_error("File error");
+}
+
 void InitGlfw()
 {
     glfwInit();
@@ -146,6 +180,18 @@ void InitGlfw()
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Test", nullptr, nullptr);
+}
+
+void CreateShaderModule(const std::vector<byte>& code, VkShaderModule* shaderModule)
+{
+    VkShaderModuleCreateInfo shaderCreateInfo;
+    shaderCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    shaderCreateInfo.pNext = nullptr;
+    shaderCreateInfo.flags = 0;
+    shaderCreateInfo.codeSize = code.size();
+    shaderCreateInfo.pCode = (uint32_t*)code.data();
+
+    VK_CALL(vkCreateShaderModule(device, &shaderCreateInfo, nullptr, shaderModule));
 }
 
 void InitVulkan()
@@ -167,7 +213,7 @@ void InitVulkan()
     vkEnumerateInstanceLayerProperties(&numLayers, layers.data());
 
     std::cout << "Number of Instance Layers: " << numLayers << std::endl;
-    for (int i = 0; i < numLayers; i++)
+    for (uint i = 0; i < numLayers; i++)
     {
         std::cout << "---------------------------------------------------" << std::endl;
         std::cout << "Layer #" << i << std::endl;
@@ -183,7 +229,7 @@ void InitVulkan()
     std::vector<VkExtensionProperties> extensions;
     extensions.resize(numExt);
     vkEnumerateInstanceExtensionProperties(nullptr, &numExt, extensions.data());
-    for (int i = 0; i < numExt; i++)
+    for (uint i = 0; i < numExt; i++)
     {
         std::cout << "---------------------------------------------------" << std::endl;
         std::cout << "Extension #" << i << std::endl;
@@ -297,7 +343,7 @@ void InitVulkan()
     VK_CALL(vkGetSwapchainImagesKHR(device, swapchain, &numImgs, swapchainImgs.data()));
 
     imgViews.resize(numImgs);
-    for (int i = 0; i < numImgs; i++)
+    for (uint i = 0; i < numImgs; i++)
     {
         VkImageViewCreateInfo imgViewCreateInfo;
         imgViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -320,6 +366,33 @@ void InitVulkan()
         VK_CALL(vkCreateImageView(device, &imgViewCreateInfo, nullptr, &imgViews[i]));
     }
 
+    const std::vector<byte> vs = ReadFileBin("vert.spv");
+    const std::vector<byte> fs = ReadFileBin("frag.spv");
+
+    CreateShaderModule(vs, &vsModule);
+    CreateShaderModule(fs, &fsModule);
+
+    VkPipelineShaderStageCreateInfo vsStageCreateInfo;
+    vsStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vsStageCreateInfo.pNext = nullptr;
+    vsStageCreateInfo.flags = 0;
+    vsStageCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vsStageCreateInfo.module = vsModule;
+    vsStageCreateInfo.pName = "main";
+    vsStageCreateInfo.pSpecializationInfo = nullptr;
+
+    VkPipelineShaderStageCreateInfo fsStageCreateInfo;
+    fsStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fsStageCreateInfo.pNext = nullptr;
+    fsStageCreateInfo.flags = 0;
+    fsStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fsStageCreateInfo.module = fsModule;
+    fsStageCreateInfo.pName = "main";
+    fsStageCreateInfo.pSpecializationInfo = nullptr;
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vsStageCreateInfo, fsStageCreateInfo};
+    
+
 }
 
 void GameLoop()
@@ -338,6 +411,8 @@ void ShutdownVulkan()
     {
         vkDestroyImageView(device, view, nullptr);
     }
+    vkDestroyShaderModule(device, vsModule, nullptr);
+    vkDestroyShaderModule(device, fsModule, nullptr);
     vkDestroySwapchainKHR(device, swapchain, nullptr);
     vkDestroyDevice(device, nullptr);
     vkDestroySurfaceKHR(instance, surface, nullptr);

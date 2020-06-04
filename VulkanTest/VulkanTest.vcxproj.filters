@@ -20,8 +20,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="VertexShader.glsl">
+    <None Include="VertexShader.vert.glsl">
       <Filter>Source Files</Filter>
     </None>
+    <None Include="FragmentShader.frag.glsl" />
   </ItemGroup>
 </Project>
